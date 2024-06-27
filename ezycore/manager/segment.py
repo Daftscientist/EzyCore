@@ -417,13 +417,13 @@ class Segment(BaseSegment):
             self._invalidated_last = False
             return value
 
-        fetches = result._config.__ezycore_internal__['n_fetch'] + 1
+        fetches = result._config.ezycore_internal__['n_fetch'] + 1
         if fetches >= max_fetches:
             self._invalidated_last = True
             self.remove(obj_key)
         else:
             self._invalidated_last = False
-            result._config.__ezycore_internal__['n_fetch'] = fetches
+            result._config.ezycore_internal__['n_fetch'] = fetches
         return value
 
     def search(self, func: Callable[[Model], bool], *fields, limit: int = -1, **export_kwds) -> Iterable[M]:
@@ -456,7 +456,7 @@ class Segment(BaseSegment):
     def add(self, obj: M, *, overwrite: bool = False) -> None:
         assert isinstance(obj, (dict, self.model)), 'Invalid object passed'
         if isinstance(obj, self.model):
-            obj._config.__ezycore_internal__['n_fetch'] = 0
+            obj._config.ezycore_internal__['n_fetch'] = 0
 
         v = dict(obj)
         key = self.model._config.search_by

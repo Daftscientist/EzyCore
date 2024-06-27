@@ -1,13 +1,12 @@
 from __future__ import annotations
-from typing import Generic, Dict, Iterator, TypeVar, Union
+from typing import Generic, Dict, Iterator, TypeVar, Union, Any
 
-from pydantic import BaseModel, ValidationError
-from pydantic.fields import ModelField
+from pydantic import BaseModel, Field, ValidationError, root_validator
 from ezycore.exceptions import ModalMissingConfig
 
 
 class Config(BaseModel):
-    """\
+    """
     Configuration class used by the ezycore module. 
     Used to customise and control how ezycore behaves with segments and models
 
@@ -26,42 +25,40 @@ class Config(BaseModel):
         Automatically invalidates entry after it is fetched n times
     """
     search_by: str
-    exclude: Union[dict, set] = set()
-    partials: Dict[str, str] = dict()
+    exclude: Union[dict, set] = Field(default_factory=set)
+    partials: Dict[str, str] = Field(default_factory=dict)
     invalidate_after: int = -1
 
-    __ezycore_internal__: dict = {'n_fetch': 0}
+    ezycore_internal__: dict = Field(default_factory=lambda: {'n_fetch': 0})
 
 
 class Model(BaseModel):
-    __ezycore_partials__: tuple = None
+    ezycore_internal__partials: tuple = None  # Renamed from __ezycore_partials__
     _config: Config
 
+    @classmethod
     def _read_partials(cls) -> Iterator[str]:
         for k, v in cls.__annotations__.items():
-            __origin__ = getattr(v, '__origin__', None)
-            if __origin__ == PartialRef:
+            if hasattr(v, '__origin__') and v.__origin__ is PartialRef:
                 if issubclass(v.__args__[0], Model):
                     yield k
                 else:
                     raise ValueError(f'Invalid model provided for partial definition: {k}')
 
+    @classmethod
     def _verify_partials(cls) -> None:
-        partials = tuple(Model._read_partials(cls))
-        cls.__ezycore_partials__ = partials
+        partials = tuple(cls._read_partials())
+        cls.ezycore_internal__partials = partials  # Updated to use the new name
 
         defined_partials = cls._config.partials
 
-        missing = []
-        for i in partials:
-            if i not in defined_partials:
-                missing.append(i)
+        missing = [i for i in partials if i not in defined_partials]
         if missing:
-            raise ValueError('Missing partial definitions for: {}'.format(', '.join(missing)))
+            raise ValueError(f'Missing partial definitions for: {", ".join(missing)}')
 
-
-    ## Ensures _config var exists
+    @classmethod
     def __init_subclass__(cls, **kwds) -> None:
+        super().__init_subclass__(**kwds)
         try:
             r = getattr(cls, '_config')
         except AttributeError as err:
@@ -71,8 +68,7 @@ class Model(BaseModel):
             setattr(cls, '_config', Config(**r)) 
         else:
             assert isinstance(r, Config), 'Invalid config class provided'
-        Model._verify_partials(cls)
-        return super().__init_subclass__(**kwds)
+        cls._verify_partials()
 
 
 M = TypeVar('M', dict, Model)
@@ -85,7 +81,7 @@ class PartialRef(Generic[_M]):
         yield cls.validate
 
     @classmethod
-    def validate(cls, v, field: ModelField):
+    def validate(cls, v: Any, field: Any):
         type_: Model = field.outer_type_.__args__[0]
 
         if isinstance(v, type_):
@@ -93,7 +89,7 @@ class PartialRef(Generic[_M]):
 
         primary_key: str = type_._config.search_by
 
-        primary_field: ModelField = type_.__fields__.get(primary_key)
+        primary_field = type_.__fields__[primary_key]
         valid_value, err = primary_field.validate(v, {}, loc=primary_key)
         if err:
             raise ValidationError([err], cls)
