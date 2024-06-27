@@ -67,6 +67,7 @@ class Model(BaseModel):
         if isinstance(r, dict):
             setattr(cls, '_config', Config(**r)) 
         else:
+            print(r)
             assert isinstance(r, Config), 'Invalid config class provided'
         cls._verify_partials()
 
